@@ -1,4 +1,4 @@
-# Sibanie, Nani
+# Sibanie, Biruktawit
 
 ####### INST314 -- HW03: Data Wrangling with Fast Food Data ######
 
