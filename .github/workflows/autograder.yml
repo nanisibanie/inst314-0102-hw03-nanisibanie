@@ -1,0 +1,128 @@
+name: Autograder wrangle.R requirements
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  autograder:
+    name: Autograder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find wrangle file
+        id: find_file
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -f "source-code/wrangle.R" ]]; then
+            echo "FILE=source-code/wrangle.R" >> "$GITHUB_OUTPUT"
+          elif [[ -f "source-code/wrangle.r" ]]; then
+            echo "FILE=source-code/wrangle.r" >> "$GITHUB_OUTPUT"
+          else
+            echo "FILE=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Init summary
+        shell: bash
+        run: |
+          {
+            echo "## 📋 Autograder Feedback"
+            echo ""
+            echo "**File checked:** \`source-code/wrangle.R\` (or \`.r\`)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 1) File exists in the correct location/name
+        id: file_location
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FILE="${{ steps.find_file.outputs.FILE }}"
+
+          if [[ -z "${FILE}" ]]; then
+            echo "::error::Missing required file: source-code/wrangle.R (or .r). Create the folder 'source-code' and put your file there with the exact name wrangle.R or wrangle.r."
+            echo "fail=1" >> "$GITHUB_OUTPUT"
+            {
+              echo "- ❌ Required file missing or wrong location/name"
+              echo "- ℹ️ Other checks will be skipped until the file exists."
+              echo ""
+              echo "> ❗ Fix the ❌ item above, then push again."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "fail=0" >> "$GITHUB_OUTPUT"
+          echo "- ✅ Required file exists: \`${FILE}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 2) First line is # LastName, FirstName
+        id: first_line
+        continue-on-error: true
+        if: steps.file_location.outputs.fail != '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FILE="${{ steps.find_file.outputs.FILE }}"
+          first_line="$(head -n 1 "${FILE}" | tr -d '\r')"
+
+          # Reject unchanged placeholder
+          if [[ "${first_line}" == "# LastName, FirstName" ]]; then
+            echo "::error file=${FILE}::Replace the placeholder with your actual name, e.g. # Smith, Jane"
+            echo "fail=1" >> "$GITHUB_OUTPUT"
+            {
+              echo "- ❌ First line is still the placeholder"
+              echo "  - Found: \`${first_line}\`"
+              echo "  - Example: \`# Smith, Jane\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Require: starts with "#", then LastName, then comma, then FirstName.
+          # Allows letters plus spaces/hyphen/apostrophe in each side.
+          regex='^#[[:space:]]*[A-Za-z][A-Za-z'"'"' -]*,[[:space:]]*[A-Za-z][A-Za-z'"'"' -]*[[:space:]]*$'
+
+          if [[ ! "${first_line}" =~ ${regex} ]]; then
+            echo "::error file=${FILE}::First line must be a comment in the format: # LastName, FirstName (example: # Smith, Jane)"
+            echo "fail=1" >> "$GITHUB_OUTPUT"
+            {
+              echo "- ❌ First line incorrect"
+              echo "  - Expected format: \`# LastName, FirstName\` (example: \`# Smith, Jane\`)"
+              echo "  - Found: \`${first_line}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "fail=0" >> "$GITHUB_OUTPUT"
+          echo "- ✅ First line matches format: \`# LastName, FirstName\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Finalize (fail if any check failed)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          failed=0
+
+          if [[ "${{ steps.file_location.outputs.fail }}" == "1" ]]; then
+            failed=1
+          fi
+
+          if [[ "${{ steps.first_line.outputs.fail }}" == "1" ]]; then
+            failed=1
+          fi
+
+          if [[ $failed -eq 1 ]]; then
+            {
+              echo ""
+              echo "> ❗ One or more required items are missing/incorrect. Fix the ❌ items and push again."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 🎉 All required checks passed." >> "$GITHUB_STEP_SUMMARY"
